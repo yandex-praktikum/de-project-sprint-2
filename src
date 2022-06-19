@@ -1,0 +1,268 @@
+
+DROP TABLE IF EXISTS public.shipping;
+
+
+
+--shipping
+CREATE TABLE public.shipping(
+   ID serial ,
+   shippingid                         BIGINT,
+   saleid                             BIGINT,
+   orderid                            BIGINT,
+   clientid                           BIGINT,
+   payment_amount                          NUMERIC(14,2),
+   state_datetime                    TIMESTAMP,
+   productid                          BIGINT,
+   description                       text,
+   vendorid                           BIGINT,
+   namecategory                      text,
+   base_country                      text,
+   status                            text,
+   state                             text,
+   shipping_plan_datetime            TIMESTAMP,
+   hours_to_plan_shipping           NUMERIC(14,2),
+   shipping_transfer_description     text,
+   shipping_transfer_rate           NUMERIC(14,3),
+   shipping_country                  text,
+   shipping_country_base_rate       NUMERIC(14,3),
+   vendor_agreement_description      text,
+   PRIMARY KEY (ID)
+);
+CREATE INDEX shippingid ON public.shipping (shippingid);
+
+COMMENT ON COLUMN public.shipping.shippingid is 'id of shipping of sale';
+
+select * from public.shipping
+limit 5
+
+
+/*Создайте справочник стоимости доставки в страны shipping_country_rates из данных, 
+указанных в shipping_country и shipping_country_base_rate, 
+сделайте первичный ключ таблицы — серийный id, то есть серийный идентификатор каждой строчки. 
+Важно дать серийному ключу имя «id». Справочник должен состоять из уникальных пар полей из таблицы shipping.*/
+
+DROP TABLE IF EXISTS public.shipping_country_rates; 
+  
+ create table  public.shipping_country_rates (
+id serial, 
+shipping_country   text NULL ,
+shipping_country_base_rate numeric(14, 3) NULL,
+   PRIMARY KEY  (id)
+);
+
+CREATE SEQUENCE shipping_country_sequence
+START 1;
+
+select * 
+from public.shipping_country_rates
+
+INSERT INTO  public.shipping_country_rates (id, shipping_country, shipping_country_base_rate)
+SELECT nextval('shipping_country_sequence')::bigint as id,
+       shipping_country ,
+        shipping_country_base_rate 
+FROM
+  (SELECT 
+  DISTINCT shipping_country,
+                  shipping_country_base_rate
+   FROM  public.shipping) t; 
+   
+  drop sequence d_categories_sequence;		
+  
+/*Создайте справочник тарифов доставки вендора по договору shipping_agreement 
+из данных строки vendor_agreement_description через разделитель :*/
+ 
+ DROP TABLE IF EXISTS public.shipping_agreement; 
+  
+ create table  public.shipping_agreement (
+agreementid int, 
+agreement_number text  NULL,
+agreement_rate numeric(14, 3) NULL,
+agreement_commission numeric(14, 3) null,
+PRIMARY KEY  (agreementid)
+);
+
+select * 
+from public.shipping_agreement
+
+
+INSERT into public.shipping_agreement (agreementid, agreement_number, agreement_rate, agreement_commission)
+SELECT cast(agreement_description[1] as int) as agreementid,
+       cast(agreement_description[2] as text ) as agreement_number ,
+        cast(agreement_description[3] as numeric(14, 3)) as agreement_rate,
+        cast(agreement_description[4] as  numeric(14, 3)) as agreement_commission
+FROM
+  (SELECT 
+  DISTINCT   regexp_split_to_array(vendor_agreement_description, ':+') AS agreement_description
+   FROM public.shipping) t; 
+   
+/*Создайте справочник о типах доставки
+shipping_transfer из строки shipping_transfer_description через разделитель :  */
+  
+ DROP TABLE IF EXISTS public.shipping_transfer; 
+  
+ create table  public.shipping_transfer (
+ id serial, 
+transfer_type text  ,
+transfer_model text  ,
+shipping_transfer_rate numeric(14, 3) null,
+PRIMARY KEY  (id)
+);
+
+select * 
+from public.shipping_transfer
+ 
+ 
+CREATE SEQUENCE shipping_transfer_sequence
+START 1;
+
+INSERT INTO public.shipping_transfer (id, transfer_type, transfer_model, shipping_transfer_rate)
+SELECT nextval('shipping_transfer_sequence')::bigint AS id,
+       transfer_description[1] as transfer_type ,
+        transfer_description[2] as transfer_model,
+        shipping_transfer_rate
+FROM
+  (SELECT 
+  DISTINCT  regexp_split_to_array(shipping_transfer_description, ':+') AS transfer_description,
+  shipping_transfer_rate
+   FROM public.shipping) t; 
+   
+  drop sequence shipping_transfer_sequence;			
+
+/* Создайте таблицу shipping_info с уникальными доставками shippingid 
+ и свяжите её с созданными справочниками
+  shipping_country_rates, shipping_agreement, shipping_transfer 
+ и константной информацией о доставке shipping_plan_datetime , payment_amount , vendorid*/
+ 
+ DROP TABLE IF EXISTS public.shipping_info; 
+  
+ create table  public.shipping_info (
+ shippingid int,
+ vendorid BIGINT,
+ payment_amount   NUMERIC(14,2),
+ shipping_plan_datetime  TIMESTAMP,
+ transfer_type_id BIGINT,
+ shipping_country_id BIGINT,
+ agreementid BIGINT,
+ PRIMARY KEY  (shippingid),
+ FOREIGN KEY (transfer_type_id) REFERENCES public.shipping_transfer(id),
+ FOREIGN KEY (shipping_country_id) REFERENCES public.shipping_country_rates(id),
+ FOREIGN KEY (agreementid) REFERENCES public.shipping_agreement(agreementid)
+);
+
+TRUNCATE TABLE shipping_info;
+
+INSERT INTO public.shipping_info (shippingid, vendorid, payment_amount,shipping_plan_datetime, transfer_type_id , shipping_country_id,  agreementid)
+SELECT  
+  DISTINCT shippingid,
+  vendorid,
+  payment as payment_amount,
+  shipping_plan_datetime,
+  st.id as transfer_type_id,
+ scr.id as shipping_country_id, 
+ agreementid
+  from shipping as s  
+left join shipping_transfer as st on (regexp_split_to_array(s.shipping_transfer_description , E'\\:+'))[1] = st.transfer_type
+                                    and (regexp_split_to_array(s.shipping_transfer_description , E'\\:+'))[2] = st.transfer_model
+left join shipping_country_rates as scr on (s.shipping_country = scr.shipping_country)
+left join shipping_agreement as sa on (cast((regexp_split_to_array(s.vendor_agreement_description, ':+'))[1] as int)) = sa.agreementid;
+
+  select * from
+  public.shipping_info
+  
+/*  
+  Создайте таблицу статусов о доставке shipping_status и включите туда информацию из лога shipping (status , state).
+  Добавьте туда вычислимую информацию по фактическому времени доставки shipping_start_fact_datetime,
+  shipping_end_fact_datetime . Отразите для каждого уникального shippingid его итоговое состояние доставки.*/
+  
+   DROP TABLE IF EXISTS public.shipping_status; 
+  
+ create table  public.shipping_status (
+ shippingid int,
+ status text,
+state text,
+shipping_start_fact_datetime TIMESTAMP,
+shipping_end_fact_datetime TIMESTAMP)
+
+select * from
+  public.shipping_status
+  
+ INSERT INTO public.shipping_status (shippingid,status,state,shipping_start_fact_datetime, shipping_end_fact_datetime  )
+ with main as (
+	 select 
+	 distinct shippingid, 
+	 last_status,
+	last_state
+	 from (
+		 select
+		distinct shippingid, 
+		status as last_status,
+		state as last_state,
+		state_datetime as max_dt,
+		row_number () over (partition by shippingid order by  state_datetime desc) as numeration
+		from public.shipping
+		order by 1) t 
+	where numeration = 1),
+start_fact as ( 
+	select 
+	distinct shippingid, 
+	state_datetime as start_fact_time
+	from public.shipping
+	where state = 'booked'
+	order by 1),
+end_fact as ( 
+	select 
+	distinct shippingid, 
+	state_datetime as end_fact_time
+	from public.shipping
+	where state = 'recieved'
+	order by 1)
+select distinct m.shippingid,
+last_status,
+last_state, 
+start_fact_time,
+end_fact_time
+from main m
+left join start_fact st on (m.shippingid = st.shippingid)
+left join end_fact en on (m.shippingid = en.shippingid)
+
+--Создайте представление shipping_datamart на основании готовых таблиц 	
+	
+DROP TABLE IF EXISTS public.shipping_datamart; 
+  
+ create table  public.shipping_datamart (
+shippingid int,
+vendorid BIGINT,
+transfer_type text,
+full_day_at_shipping int, 
+is_delay int,
+is_shipping_finish int,
+delay_day_at_shipping int,
+payment_amount NUMERIC(14,2),
+vat  NUMERIC(14,2),
+profit NUMERIC(14,2) )
+
+ select * from
+  public.shipping_datamart
+  
+INSERT INTO public.shipping_datamart (
+shidelay_day_at_shipping, payment_amount, vat, profit)
+
+
+select 
+distinct si.shippingid,
+si.vendorid,
+st.transfer_type, 
+date_part('day', age(shipping_end_fact_datetime,shipping_start_fact_datetime)) as full_day_at_shipping,
+case when shipping_end_fact_datetime>shipping_start_fact_datetime then 1 else 0 end as is_delay,
+case when ss.status = 'finished' then 1 else 0 end as is_shipping_finish,
+case when  shipping_end_fact_datetime >si.shipping_plan_datetime 
+	then date_part('day', age(shipping_end_fact_datetime,si.shipping_plan_datetime))else  0 end as delay_day_at_shipping,
+si.payment_amount, 
+payment_amount * ( shipping_country_base_rate + agreement_rate + shipping_transfer_rate) as vat, 
+payment_amount * agreement_commission as profit
+from public.shipping_info si
+left join public.shipping_transfer st on (si.transfer_type_id  = st.id)
+left join public.shipping_status ss on (si.shippingid = ss.shippingid) 
+left join public.shipping_country_rates sr on(si.shipping_country_id = sr.id  )
+left join public.shipping_agreement sa on(si.agreementid = sa.agreementid)
+
