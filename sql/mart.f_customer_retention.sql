@@ -1,24 +1,18 @@
-   create table if not exists  mart.f_customer_retention (
+  
+ create table if not exists  mart.f_customer_retention (
    new_customers_count int,
    returning_customers_count int,
    refunded_customer_count int,
    period_name varchar(20),
    period_id int,
+   item_id int, 
    new_customers_revenue int,
    returning_customers_revenue int,
    customers_refunded int 
    );
   
-  
-   select distinct customer_id, count(1)
-   from mart.f_sales
-   where 1=1
-   and status = 'shipped'
-   group by 1
-   having  count(1) = 1
-   order by 1
-   
-  with order_cnt as (select 
+
+with order_cnt as (select 
 	customer_id
 	,c.week_of_year as period_id
 	,count(id) as orders_cnt 
@@ -41,7 +35,6 @@ from mart.f_sales fs
 left join mart.d_calendar cd using(date_id)
 left join order_cnt oc on fs.customer_id = oc.customer_id and cd.week_of_year = oc.period_id
 group by cd.week_of_year, item_id)
-
 insert into mart.f_customer_retention as f
 (new_customers_count, returning_customers_count, refunded_customer_count, period_name, period_id, item_id, new_customers_revenue,returning_customers_revenue,customers_refunded)
 select * from main;

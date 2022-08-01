@@ -11,6 +11,12 @@ from airflow.hooks.base import BaseHook
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.hooks.http_hook import HttpHook
 
+# import the logging module
+import logging
+
+# get the airflow.task logger
+task_logger = logging.getLogger('airflow.task')
+
 http_conn_id = HttpHook.get_connection('http_conn_id')
 api_key = http_conn_id.extra_dejson.get('api_key')
 base_url = http_conn_id.host
@@ -30,7 +36,7 @@ headers = {
 
 
 def generate_report(ti):
-    print('Making request generate_report')
+    task_logger.info('Making request generate_report')
 
     response = requests.post(f'{base_url}/generate_report', headers=headers)
     response.raise_for_status()
@@ -40,7 +46,7 @@ def generate_report(ti):
 
 
 def get_report(ti):
-    print('Making request get_report')
+    task_logger.info('Making request get_report')
     task_id = ti.xcom_pull(key='task_id')
 
     report_id = None
@@ -64,7 +70,7 @@ def get_report(ti):
 
 
 def get_increment(date, ti):
-    print('Making request get_increment')
+    task_logger.info('Making request get_increment')
     report_id = ti.xcom_pull(key='report_id')
     response = requests.get(
         f'{base_url}/get_increment?report_id={report_id}&date={str(date)}T00:00:00',
@@ -84,7 +90,8 @@ def upload_data_to_staging(filename, date, pg_table, pg_schema, ti):
     local_filename = date.replace('-', '') + '_' + filename
 
     response = requests.get(s3_filename)
-    open(f"{local_filename}", "wb").write(response.content)
+    with open(f"{local_filename}", "wb") as file:
+        file.write(response.content)
 
     df = pd.read_csv(local_filename)
     df.drop_duplicates(subset=['id'], inplace=True)
@@ -92,8 +99,6 @@ def upload_data_to_staging(filename, date, pg_table, pg_schema, ti):
 
     postgres_hook = PostgresHook(postgres_conn_id)
     engine = postgres_hook.get_sqlalchemy_engine()
-    #df.to_sql(pg_table, engine, schema=pg_schema, if_exists='append', index=False)
-
     
     try:
         print('status' in df.columns)  
@@ -120,6 +125,8 @@ def upload_data_to_staging(filename, date, pg_table, pg_schema, ti):
         print('date cleanup error')
     try:
         df.to_sql(pg_table, engine, schema=pg_schema, if_exists='append', index=False)
+        task_logger.info('Upload success', business_dt)
+        #COPY pg_table FROM 'C:\tmp\sample_data.csv' DELIMITER ',' CSV HEADER;
     except:
         print('load data to staging error')
 
