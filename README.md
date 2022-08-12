@@ -8,13 +8,13 @@
 `de-project-2` после того, как вы привяжете свой 
 GitHub-аккаунт на Платформе.
 2. Скопируйте репозиторий на свой локальный компьютер:
-    * `git clone https://github.com/{{ username }}/de-project-2.git`
-    * `cd de-project-2`
+	* `git clone https://github.com/{{ username }}/de-project-2.git`
+	* `cd de-project-2`
 3. Выполните проект и сохраните получившийся код в локальном репозитории:
-	  * `git add .`
-	  * `git commit -m 'my best commit'`
+	* `git add .`
+	* `git commit -m 'my best commit'`
 4. Обновите репозиторий в вашем GutHub-аккаунте:
-	  * `git push origin main`
+	* `git push origin main`
 
 ### Структура репозитория
 Папка migrations хранит файлы миграции. 
