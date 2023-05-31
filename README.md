@@ -23,7 +23,7 @@
 Запустите локально команду:
 
 ```
-docker run -d --rm -p 3000:3000 -p 15432:5432 --name=de-project-sprint-2-server sindb/project-sprint-2:latest
+docker run -d --rm -p 3000:3000 -p 15432:5432 --name=de-project-sprint-2-server cr.yandex/crp1r8pht0n0gl25aug1/project-sprint-2:latest
 ```
 
 После того как запустится контейнер, у вас будут доступны:
