@@ -27,6 +27,5 @@ docker run -d --rm -p 3000:3000 -p 15432:5432 --name=de-project-sprint-2-server 
 ```
 
 После того как запустится контейнер, у вас будут доступны:
-1. CloudBeaver
-2. PostgreSQL
-3. VSCode
+1. PostgreSQL
+2. VSCode
